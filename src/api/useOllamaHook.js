@@ -5,7 +5,6 @@ function useOllamaHook() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // NOTA: se podria manejar primero con el stream en false para obtener la respuesta completa y manejo mas rapido y sencillo para explicarle al alumno, ya despues se puede explicar el streaming y como se maneja, pero para que no se complique tanto al principio, se puede manejar con el stream en false y luego explicar el streaming como una mejora de la experiencia de usuario.
   const handleSubmit = async (_prompt) => {
     console.log('handleSubmit called with prompt:', _prompt);
     setLoading(true);

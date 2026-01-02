@@ -6,7 +6,6 @@ import { SendHorizontal } from "lucide-react";
 import { useGlobal } from "./context/global-context";
 import useOllamaHook from "./api/useOllamaHook.js";
 
-// Esquema de validación con Zod
 const messageSchema = z.object({
   text: z
     .string()
@@ -14,10 +13,23 @@ const messageSchema = z.object({
     .max(200, "El mensaje es demasiado largo"),
 });
 
+// Función para limpiar las etiquetas <think>
+function cleanThinkTags(text) {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
 export default function App() {
   const hook = useGlobal();
   const ollamaHook = useOllamaHook();
   const [messages, setMessages] = useState([]);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+
+  // Cargar el chat actual al inicio
+  useEffect(() => {
+    if (hook.state.currentChat?.length > 0) {
+      setMessages(hook.state.currentChat);
+    }
+  }, []);
 
   const {
     register,
@@ -29,40 +41,51 @@ export default function App() {
   });
 
   const onSubmit = (data) => {
+    // 1. Agregar mensaje del usuario
     setMessages((prev) => [...prev, { text: data.text, sender: "user" }]);
+    
+    // 2. Agregar un mensaje vacío del bot INMEDIATAMENTE
+    setMessages((prev) => [...prev, { text: "", sender: "bot" }]);
+    
+    setIsWaitingForResponse(true);
     reset();
-
-    // Simular respuesta del bot
+    
+    // 3. Llamar a Ollama
     ollamaHook.handleSubmit(data.text);
   };
 
-  // Al recibir chunks de streaming: actualiza SOLO el último mensaje del bot
+  // Actualiza SOLO el último mensaje del bot con el streaming
   useEffect(() => {
-    if (!ollamaHook.response) return;
+    if (!ollamaHook.response || !isWaitingForResponse) return;
+
+    const cleanedResponse = cleanThinkTags(ollamaHook.response);
 
     setMessages((prevMessages) => {
       const updatedMessages = [...prevMessages];
-      // Encuentra el último mensaje del bot (de atrás hacia adelante)
-      const lastBotIndex = [...updatedMessages]
-        .reverse()
-        .findIndex((msg) => msg.sender === "bot");
-
-      if (lastBotIndex !== -1) {
-        const realIndex = updatedMessages.length - 1 - lastBotIndex;
-        updatedMessages[realIndex] = {
-          ...updatedMessages[realIndex],
-          text: ollamaHook.response,
-        };
-      } else {
-        // fallback: si no había, lo agrega
-        updatedMessages.push({ text: ollamaHook.response, sender: "bot" });
+      
+      // Buscar el último mensaje que sea del bot
+      for (let i = updatedMessages.length - 1; i >= 0; i--) {
+        if (updatedMessages[i].sender === "bot") {
+          updatedMessages[i] = {
+            ...updatedMessages[i],
+            text: cleanedResponse,
+          };
+          break;
+        }
       }
-
+      
       return updatedMessages;
     });
-  }, [ollamaHook.response]);
+  }, [ollamaHook.response, isWaitingForResponse]);
 
-  // Dispara eventos al contexto global cuando cambia el historial
+  // Detectar cuando termina la respuesta
+  useEffect(() => {
+    if (!ollamaHook.loading && isWaitingForResponse && ollamaHook.response) {
+      setIsWaitingForResponse(false);
+    }
+  }, [ollamaHook.loading]);
+
+  // Actualiza el contexto global cuando cambia el historial
   useEffect(() => {
     if (!messages.length) return;
     const event = { type: "@current_chat", payload: messages };
@@ -75,14 +98,14 @@ export default function App() {
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`px-4 py-2 rounded-lg ${msg.sender === "user"
+            className={`px-4 py-2 rounded-lg max-w-[80%] ${
+              msg.sender === "user"
                 ? "bg-blue-600 self-end"
                 : "bg-gray-700 self-start mt-2"
-              }`}
+            }`}
           >
-            {msg.text}
-            {ollamaHook.loading && msg.sender === "bot" && index === messages.length - 1 && (
-              <span className="ml-2 animate-pulse">...</span>
+            {msg.text || (
+              <span className="animate-pulse">Escribiendo...</span>
             )}
           </div>
         ))}
@@ -97,10 +120,12 @@ export default function App() {
             placeholder="Escribe un mensaje..."
             className="flex-1 p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none"
             {...register("text")}
+            disabled={ollamaHook.loading}
           />
           <button
             type="submit"
-            className="ml-2 p-2 bg-blue-600 rounded-lg"
+            className="ml-2 p-2 bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={ollamaHook.loading}
           >
             <SendHorizontal size={20} />
           </button>
@@ -109,12 +134,6 @@ export default function App() {
           <span className="text-red-400 text-sm">{errors.text.message}</span>
         )}
       </form>
-    </div >
+    </div>
   );
 }
-
-
-// NOTA: PROMPT PROPUESTO, para clase: 
-// <think> Alright, the user said "hola". That's Spanish for "hello". I should respond in a friendly manner. Maybe say "¡Hola! ¿En qué puedo ayudarte hoy?" to be welcoming and offer assistance. </think> ¡Hola! ¿En qué puedo ayudarte hoy?
-// es es un ejemplo d ela repuesta del bot, como podria manejarse esta parte de forma mas natural? dame varias opciones de como podria ser la respuesta del bot, pero sin que diga "pensando" o <think>... </think> y que sea mas natural, como si fuera una persona real respondiendo.
-

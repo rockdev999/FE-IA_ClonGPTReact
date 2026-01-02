@@ -9,46 +9,43 @@ const storage = {
 
 function globalReducer(state, action) {
   switch (action.type) {
-    // guarda el chat actual en el historial
     case "@save_history": {
-
-      if (!state.currentChat?.length) return state
+      if (!state.currentChat?.length) return state;
+      
       const prev = localStorage.getItem("history");
       const messages = prev ? JSON.parse(prev) : [];
 
       const newChat = {
-        // obtenemos el primer mensaje del chat como titulo
         id: crypto.randomUUID(),
         title: state.currentChat[0].text,
-        content: state.currentChat
-      }
+        content: state.currentChat,
+      };
 
       localStorage.setItem(
         "history",
-        JSON.stringify([...messages, newChat]),
+        JSON.stringify([...messages, newChat])
       );
 
-      // TODO: IMPLEMENTAR GUARDAADO EN BASE DE DATOS EXRPRESS
-
-      // limpiamos el chat actual
-      state.currentChat = [];
-      return state;
+      return { ...state, currentChat: [] };
     }
+    
     case "@load_messages": {
-      // lee todos los mensajes guardados
       const history = localStorage.getItem("history");
       if (!history) {
-        return { messages: [], ...state };
+        return { ...state, messages: [] };
       }
-      // evitar que el state se sobreescriba
-      state.messages = JSON.parse(history);
-      return { ...state };
+      return { ...state, messages: JSON.parse(history) };
     }
-    case "@current_chat": {      
-      // actulizamos el chat actual
-      state.currentChat = action.payload;
-      return { ...state };
+    
+    case "@current_chat": {
+      return { ...state, currentChat: action.payload };
     }
+    
+    case "@load_chat": {
+      // Cargar un chat anterior
+      return { ...state, currentChat: action.payload };
+    }
+    
     default: {
       throw new Error(`Unhandled action type: ${action.type}`);
     }
@@ -69,9 +66,7 @@ function useGlobal() {
   if (context === undefined) {
     throw new Error("useGlobal must be used within a GlobalProvider");
   }
-
   return context;
 }
 
-// eslint-disable-next-line
 export { GlobalProvider, useGlobal };
